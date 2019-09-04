@@ -40,6 +40,52 @@
     return self;
 }
 
+-(void)initUI {
+    self.scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
+    self.scrollView.delegate = self;
+    [self addSubview:self.scrollView];
+    
+    self.curTimeView = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
+    self.curTimeView.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
+    [self addSubview:self.curTimeView];
+    
+    self.topBorderView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.topBorderView.backgroundColor = [UIColor whiteColor];
+    [self addSubview:self.topBorderView];
+    self.bottomBorderView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.bottomBorderView.backgroundColor = [UIColor whiteColor];
+    [self addSubview:self.bottomBorderView];
+    self.leftBorderView = [[UIButton alloc] init];
+    [self.leftBorderView setImage:[UIImage imageNamed:@"crop_video_grip"] forState:UIControlStateNormal];
+    self.leftBorderView.adjustsImageWhenHighlighted = NO;
+    [self.leftBorderView sizeToFit];
+    
+    [self addSubview:self.leftBorderView];
+    self.rightBorderView = [[UIButton alloc] init];
+    [self.rightBorderView setImage:[UIImage imageNamed:@"crop_video_grip"] forState:UIControlStateNormal];
+    self.rightBorderView.adjustsImageWhenHighlighted = NO;
+    [self.rightBorderView sizeToFit];
+    [self addSubview:self.self.rightBorderView];
+    self.anchorWidth = self.rightBorderView.frame.size.width;
+    
+    self.leftMaskView = [[UIView alloc] init];
+    self.leftMaskView.backgroundColor = [UIColor blackColor];
+    self.leftMaskView.alpha = 0.6;
+    self.leftMaskView.userInteractionEnabled = NO;
+    [self addSubview:self.leftMaskView];
+    
+    self.rightMaskView = [[UIView alloc] init];
+    self.rightMaskView.backgroundColor = [UIColor blackColor];
+    self.rightMaskView.alpha = 0.6;
+    self.rightMaskView.userInteractionEnabled = NO;
+    [self addSubview:self.rightMaskView];
+    
+    self.leftPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveLeftAnchor:)];
+    [self.leftBorderView addGestureRecognizer:self.leftPanGestureRecognizer];
+    self.rightPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveRightAnchor:)];
+    [self.rightBorderView addGestureRecognizer:self.rightPanGestureRecognizer];
+}
+
 - (void)setDuration:(CGFloat)duration {
     _duration = duration;
     [self mapValue];
@@ -126,49 +172,6 @@
     self.scrollView.contentSize = CGSizeMake(contentWidth, imgHeight);
 }
 
--(void)initUI {
-    self.scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
-    self.scrollView.delegate = self;
-    [self addSubview:self.scrollView];
-    
-    self.curTimeView = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
-    self.curTimeView.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
-    [self addSubview:self.curTimeView];
-    
-    self.topBorderView = [[UIView alloc] initWithFrame:CGRectZero];
-    self.topBorderView.backgroundColor = [UIColor whiteColor];
-    [self addSubview:self.topBorderView];
-    self.bottomBorderView = [[UIView alloc] initWithFrame:CGRectZero];
-    self.bottomBorderView.backgroundColor = [UIColor whiteColor];
-    [self addSubview:self.bottomBorderView];
-    self.leftBorderView = [[UIButton alloc] init];
-    [self.leftBorderView setImage:[UIImage imageNamed:@"crop_video_grip"] forState:UIControlStateNormal];
-    self.leftBorderView.adjustsImageWhenHighlighted = NO;
-    [self.leftBorderView sizeToFit];
-    
-    [self addSubview:self.leftBorderView];
-    self.rightBorderView = [[UIButton alloc] init];
-    [self.rightBorderView setImage:[UIImage imageNamed:@"crop_video_grip"] forState:UIControlStateNormal];
-    self.rightBorderView.adjustsImageWhenHighlighted = NO;
-    [self.rightBorderView sizeToFit];
-    [self addSubview:self.self.rightBorderView];
-    self.anchorWidth = self.rightBorderView.frame.size.width;
-    
-    self.leftMaskView = [[UIView alloc] init];
-    self.leftMaskView.backgroundColor = [UIColor blackColor];
-    self.leftMaskView.alpha = 0.6;
-    [self addSubview:self.leftMaskView];
-    
-    self.rightMaskView = [[UIView alloc] init];
-    self.rightMaskView.backgroundColor = [UIColor blackColor];
-    self.rightMaskView.alpha = 0.6;
-    [self addSubview:self.rightMaskView];
-    
-    self.leftPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveLeftAnchor:)];
-    [self.leftBorderView addGestureRecognizer:self.leftPanGestureRecognizer];
-    self.rightPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveRightAnchor:)];
-    [self.rightBorderView addGestureRecognizer:self.rightPanGestureRecognizer];
-}
 
 - (void)layoutSubviews {
     self.scrollView.frame = self.bounds;

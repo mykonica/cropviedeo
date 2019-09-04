@@ -28,6 +28,10 @@
     [super viewDidLoad];
 }
 
+- (void)dealloc
+{
+    NSLog(@"");
+}
 - (void)setIsEdit:(BOOL)isEdit {
     _isEdit = isEdit;
 }

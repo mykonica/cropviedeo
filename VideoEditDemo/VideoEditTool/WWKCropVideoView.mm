@@ -24,6 +24,7 @@
 @property (nonatomic, strong) WWKVideoSlideView *slider;
 @property (nonatomic, assign) CGFloat startTime;
 @property (nonatomic, assign) CGFloat endTime;
+@property (nonatomic, strong) id playerTimerObserver;
 @end
 
 @implementation WWKCropVideoView
@@ -56,21 +57,20 @@
     return self;
 }
 
-- (void)dealloc
-{
-    [self invalidatePlayer];
-}
-
 - (void)invalidatePlayer{
     [self stopTimer];
-    [self.player removeTimeObserver:self];
+    if (self.playerTimerObserver) {
+        [self.player removeTimeObserver:self.playerTimerObserver];
+        self.playerTimerObserver = nil;
+    }
     [self.player pause];
     [self.playItem removeObserver:self forKeyPath:@"status"];
-    
 }
 
 #pragma mark 视频裁剪
 - (void)onCropVideo{
+    [self invalidatePlayer];
+    
     NSString *tempVideoPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mov", [[NSUUID UUID] UUIDString]]];
     
     AVAsset *asset = [AVAsset assetWithURL:self.videoUrl];
@@ -136,7 +136,7 @@
     
     self.player = [AVPlayer playerWithPlayerItem:self.playItem];
     __weak __typeof(self) weakSelf = self;
-    [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1, 5)
+    self.playerTimerObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1,10)
                                               queue:dispatch_get_main_queue()
                                          usingBlock:^(CMTime time) {
                                              /// 更新播放进度
@@ -199,7 +199,6 @@
 #pragma mark  - 关闭计时器
 - (void)stopTimer{
     [self.repeatTimer invalidate];
-    [self.player pause];
 }
 
 #pragma mark  - 读取解析视频帧
@@ -267,6 +266,8 @@
 }
 
 - (void)onCancel{
+    [self invalidatePlayer];
+    
     if (self.delegate && [self.delegate respondsToSelector:@selector(cancelCropVideo:)]) {
         [self.delegate cancelCropVideo:self];
     }
