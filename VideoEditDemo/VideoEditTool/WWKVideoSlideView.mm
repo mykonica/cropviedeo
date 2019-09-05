@@ -100,6 +100,9 @@
 }
 
 -(void)setNow:(CGFloat)now {
+    if (_now > now) {
+        NSLog(@"_now = %f, now = %f, now_pos = %f, right = %f, start = %f, end = %f", _now, now, [self timeToPos:self.now], self.anchorRight, self.startTime, self.endTime);
+    }
     _now = now;
     [self moveCurTimeLine];
 }
@@ -281,6 +284,13 @@
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate{
+    if (!decelerate) {
+        if (self.delegate && [self.delegate respondsToSelector:@selector(slideStop:)]) {
+            [self.delegate slideStop:self];
+        }
+    }
+}
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
     if (self.delegate && [self.delegate respondsToSelector:@selector(slideStop:)]) {
         [self.delegate slideStop:self];
     }

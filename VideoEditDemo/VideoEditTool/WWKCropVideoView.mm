@@ -18,7 +18,6 @@
 @property (nonatomic, strong) AVPlayerItem      *playItem;
 @property (nonatomic, strong) AVPlayerLayer     *playerLayer;
 @property (nonatomic, strong) AVPlayer          *player;
-@property (nonatomic, strong) NSTimer           *repeatTimer;   // 循环播放计时器
 @property (nonatomic, strong) UIButton *cancelButton;
 @property (nonatomic, strong) UIButton *doneButton;
 @property (nonatomic, strong) WWKVideoSlideView *slider;
@@ -58,13 +57,13 @@
 }
 
 - (void)invalidatePlayer{
-    [self stopTimer];
     if (self.playerTimerObserver) {
         [self.player removeTimeObserver:self.playerTimerObserver];
         self.playerTimerObserver = nil;
     }
     [self.player pause];
     [self.playItem removeObserver:self forKeyPath:@"status"];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 #pragma mark 视频裁剪
@@ -129,33 +128,10 @@
     }
 }
 
-#pragma mark - 初始化player
-- (void)initPlayerWithVideoUrl:(NSURL *)videlUrl{
-    self.playItem = [[AVPlayerItem alloc] initWithURL:videlUrl];
-    [self.playItem addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
-    
-    self.player = [AVPlayer playerWithPlayerItem:self.playItem];
-    __weak __typeof(self) weakSelf = self;
-    self.playerTimerObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1,100)
-                                              queue:dispatch_get_main_queue()
-                                         usingBlock:^(CMTime time) {
-                                             /// 更新播放进度
-                                             [weakSelf updateProgress:time];
-    }];
-    
-    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
-    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspect;
-    self.playerLayer.contentsScale = [UIScreen mainScreen].scale;
-    self.playerLayer.frame = CGRectMake(25, 0, self.bounds.size.width - 2 * 25, self.slider.frame.origin.y - 15);
-    [self.layer addSublayer:self.playerLayer];
-}
-
 -(void)updateProgress:(CMTime)time {
     self.slider.now = CMTimeGetSeconds(self.player.currentTime);
-    NSLog(@"self.slider.now = %f", self.slider.now);
 }
 
-#pragma mark - KVO属性播放属性监听
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context {
     if ([keyPath isEqualToString:@"status"]) {
         switch (self.playItem.status) {
@@ -165,7 +141,6 @@
             case AVPlayerItemStatusReadyToPlay:
                 if (!_player.timeControlStatus || _player.timeControlStatus != AVPlayerTimeControlStatusPaused) {
                     [_player play];
-                    [self startTimer];
                 }
                 NSLog(@"KVO：准备完毕，可以播放");
                 break;
@@ -178,30 +153,55 @@
     }
 }
 
-#pragma mark  - 开启计时器
-- (void)startTimer{
-    // 开启循环播放
-    self.repeatTimer = [NSTimer scheduledTimerWithTimeInterval:self.slider.endTime - self.slider.startTime
-                                                        target:self
-                                                      selector:@selector(repeatPlay)
-                                                      userInfo:nil
-                                                       repeats:YES];
-    [self.repeatTimer fire];
+- (void)replay{
+    [self seekToTimeAccurate:self.slider.startTime];
+    //设置播放结束时间。修改forwardPlaybackEndTime后会重新触发AVPlayerItemStatusReadyToPlay。
+    self.player.currentItem.forwardPlaybackEndTime = CMTimeMakeWithSeconds(self.slider.endTime, self.player.currentTime.timescale);
+    NSLog(@"seek to %f, %f", self.slider.startTime, self.slider.endTime);
 }
 
-#pragma mark  - 编辑区域循环播放
-- (void)repeatPlay{
-    [self.player play];
-    CMTime start = CMTimeMakeWithSeconds(self.slider.startTime, self.player.currentTime.timescale);
-    [self.player seekToTime:start toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+- (void)pause{
+    [self.player pause];
 }
 
-#pragma mark  - 关闭计时器
-- (void)stopTimer{
-    [self.repeatTimer invalidate];
+-(void)seekToTimeAccurate:(CGFloat)seconds {
+    [self.player seekToTime:CMTimeMakeWithSeconds(seconds, self.player.currentItem.asset.duration.timescale)
+            toleranceBefore:kCMTimeZero
+             toleranceAfter:kCMTimeZero];
 }
 
-#pragma mark  - 读取解析视频帧
+- (void)initPlayerWithVideoUrl:(NSURL *)videlUrl{
+    self.playItem = [[AVPlayerItem alloc] initWithURL:videlUrl];
+    [self.playItem addObserver:self forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
+    
+    self.player = [AVPlayer playerWithPlayerItem:self.playItem];
+    self.player.currentItem.forwardPlaybackEndTime = CMTimeMake(self.slider.endTime, 1);
+    self.player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+    __weak __typeof(self) weakSelf = self;
+    self.playerTimerObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1,100)
+                                                                         queue:dispatch_get_main_queue()
+                                                                    usingBlock:^(CMTime time) {
+                                                                        /// 更新播放进度
+                                                                        [weakSelf updateProgress:time];
+                                                                    }];
+    
+    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
+    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspect;
+    self.playerLayer.contentsScale = [UIScreen mainScreen].scale;
+    self.playerLayer.frame = CGRectMake(25, 0, self.bounds.size.width - 2 * 25, self.slider.frame.origin.y - 15);
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                            selector:@selector(playerItemDidPlayToEndTimeNotification:)
+                                                name:AVPlayerItemDidPlayToEndTimeNotification
+                                              object:nil];
+    
+    [self.layer addSublayer:self.playerLayer];
+}
+
+- (void)playerItemDidPlayToEndTimeNotification:(NSNotification *)sender {
+    [self seekToTimeAccurate:self.slider.startTime];
+}
+
 - (void)analysisVideoFrames:(void (^ __nullable)(BOOL finished))completion{
     // 初始化asset对象
     AVURLAsset *videoAsset = [[AVURLAsset alloc]initWithURL:self.videoUrl options:nil];
@@ -240,6 +240,7 @@
                     for (UIImage *tmpImg : frameImgs) {
                         [weakSelf.slider addFrame:tmpImg];
                     }
+                    [weakSelf initPlayerWithVideoUrl:weakSelf.videoUrl];
                     if (completion) {
                         completion(YES);
                     }
@@ -259,9 +260,7 @@
     }];
 }
 
-
 -(void)prepareEdit:(void (^ __nullable)(BOOL finished))completion {
-    [self initPlayerWithVideoUrl:self.videoUrl];
     [self analysisVideoFrames:completion];
 }
 
@@ -300,28 +299,26 @@
     }
     
     if (b1) {
-        CMTime start = CMTimeMakeWithSeconds(self.startTime, self.player.currentTime.timescale);
-        [self.player seekToTime:start toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+        [self seekToTimeAccurate:self.startTime];
     } else if (b2) {
-        CMTime start = CMTimeMakeWithSeconds(self.endTime, self.player.currentTime.timescale);
-        [self.player seekToTime:start toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+        [self seekToTimeAccurate:self.endTime];
     }
 }
 
 -(void)slideStart:(WWKVideoSlideView*)slideView {
-    [self stopTimer];
+    [self pause];
 }
 
 -(void)slideStop:(WWKVideoSlideView*)slideView {
-    [self startTimer];
+    [self replay];
 }
 
 -(void)slideAnchorStart:(WWKVideoSlideView*)slideView {
-    [self stopTimer];
+    [self pause];
 }
 
 -(void)slideAnchorStop:(WWKVideoSlideView*)slideView {
-    [self startTimer];
+    [self replay];
 }
 
 @end
