@@ -22,6 +22,7 @@
 @property(nonatomic, strong) UIView *rightMaskView;
 @property(nonatomic, strong) UIView *curTimeView; //当前位置
 @property(nonatomic, assign) CGFloat anchorWidth;
+@property(nonatomic, assign) CGFloat timeOffset;
 @end
 
 #define ANCHOR_MARGIN 50 //编辑框边距
@@ -34,7 +35,8 @@
         _minDuration = 1.0;
         _maxDuration = 15.0;
         _startTime = 0;
-        _endTime = _startTime + _maxDuration - 1;
+        _timeOffset = 0;
+        _endTime = _startTime + _maxDuration;
         [self initUI];
     }
     return self;
@@ -93,7 +95,7 @@
 
 -(void)setMaxDuration:(CGFloat)maxDuration {
     _maxDuration = maxDuration;
-    _endTime = _startTime + _maxDuration - 1;
+    _endTime = _startTime + _maxDuration;
     [self mapValue];
 }
 
@@ -111,12 +113,12 @@
         _maxDuration = _duration;
     }
     
-    if (_endTime > _startTime + _maxDuration - 1) {
-        _endTime = _startTime + _maxDuration - 1;
+    if (_endTime > _startTime + _maxDuration) {
+        _endTime = _startTime + _maxDuration;
     }
     
-    _anchorLeft = ANCHOR_MARGIN + self.anchorWidth / 2 + _startTime / _maxDuration * (self.frame.size.width - 2 * ANCHOR_MARGIN);
-    _anchorRight = ANCHOR_MARGIN  + (_endTime + 1) / _maxDuration * (self.frame.size.width - 2 * ANCHOR_MARGIN);
+    _anchorLeft = [self timeToPos:_startTime];
+    _anchorRight = [self timeToPos:_endTime];
 }
 
 -(void)clearFrames {
@@ -127,38 +129,32 @@
     self.frameImageViews = [[NSMutableArray alloc] init];
 }
 
--(CGFloat)durationLength {
+-(CGFloat)durationPixels {
     return MAX(0, self.scrollView.contentSize.width - ANCHOR_MARGIN - ANCHOR_MARGIN);
 }
 
 -(CGFloat)secondsPerPixel {
-    return MAX(0, self.duration / [self durationLength]);
-//    return MAX(0, self.maxDuration / (self.frame.size.width - 2 * self.anchorWidth));
+    return MAX(0, self.maxDuration / (self.frame.size.width - 2 * ANCHOR_MARGIN));
 }
 
 -(CGFloat)pixelsPerSeconds {
-    if (self.duration <= 0) {
+    if (self.maxDuration == 0) {
         return 0;
     }
-    
-    return MAX(0, [self durationLength] / self.duration);
-//    if (self.maxDuration == 0) {
-//        return 0;
-//    }
-//    return MAX(0, (self.frame.size.width - 2 * self.anchorWidth ) / self.maxDuration);
+    return MAX(0, (self.frame.size.width - 2 * ANCHOR_MARGIN ) / self.maxDuration);
 }
 
 -(CGFloat)durationToLength:(CGFloat)duration {
     return duration * [self pixelsPerSeconds];
 }
 
+//posToTime和timeToPos中的pos是指在self中的位置
 -(CGFloat)posToTime:(CGFloat)pos {
-    return MAX(0, self.startTime + (pos - self.anchorLeft) * [self secondsPerPixel]);
+    return (pos - ANCHOR_MARGIN) * [self secondsPerPixel] + _timeOffset;
 }
 
 -(CGFloat)timeToPos:(CGFloat)time {
-    return MAX(0, self.anchorLeft + (time - self.startTime) * [self pixelsPerSeconds]);
-    //    return ANCHOR_MARGIN + time * [self pixelsPerSeconds];
+    return ANCHOR_MARGIN + (time - _timeOffset) * [self pixelsPerSeconds];
 }
 
 -(void)addFrame:(UIImage*)frameImage {
@@ -198,15 +194,17 @@
             CGPoint translation = [gesture translationInView:[self superview]];
             CGFloat anchorLeft = self.anchorLeft + translation.x;
             NSLog(@"translation.x = %f, left = %f, right = %f", translation.x, anchorLeft, self.anchorRight);
-            if (anchorLeft < ANCHOR_MARGIN) {
-                anchorLeft = ANCHOR_MARGIN;
-            } else if (anchorLeft + self.anchorWidth + [self durationToLength:self.minDuration]> self.anchorRight) {
-                anchorLeft = self.anchorRight - self.anchorWidth - [self durationToLength:self.minDuration];
+            CGFloat time = [self posToTime:anchorLeft];
+            if (time < _timeOffset) {
+                _startTime = _timeOffset;
+                self.anchorLeft = ANCHOR_MARGIN;
+            } else if (time + self.minDuration > _endTime) {
+                _startTime = _endTime - 1;
+                self.anchorLeft = self.anchorRight - [self durationToLength:self.minDuration];
+            } else {
+                _startTime = time;
+                self.anchorLeft = anchorLeft;
             }
-            
-            //posToTime内部实现依赖了self.anchorLeft，
-            _startTime = [self posToTime:anchorLeft];
-            self.anchorLeft = anchorLeft;
             
             [self notifyNewTime];
             [self setNeedsLayout];
@@ -240,13 +238,18 @@
             CGPoint translation = [gesture translationInView:[self superview]];
             CGFloat anchorRight = self.anchorRight + translation.x;
             NSLog(@"translation.x = %f, left = %f, right = %f", translation.x, self.anchorLeft, self.anchorRight);
-            if (anchorRight < self.anchorLeft + self.anchorWidth + [self durationToLength:self.minDuration]) {
-                anchorRight = self.anchorLeft + self.anchorWidth + [self durationToLength:self.minDuration];
-            } else if (anchorRight > self.frame.size.width - ANCHOR_MARGIN) {
-                anchorRight = self.frame.size.width - ANCHOR_MARGIN;
+            CGFloat time = [self posToTime:anchorRight];
+            
+            if (time < _startTime + self.minDuration) {
+                _endTime = _startTime + self.minDuration;
+                _anchorRight = _anchorLeft + [self durationToLength:self.minDuration];
+            } else if (time > _startTime + _maxDuration) {
+                _endTime = _startTime + _maxDuration;
+                _anchorRight = _anchorLeft + [self durationToLength:_maxDuration];
+            } else {
+                _endTime = time;
+                _anchorRight = anchorRight;
             }
-            _endTime = [self posToTime:anchorRight];
-            self.anchorRight = anchorRight;
             [self notifyNewTime];
             [self setNeedsLayout];
             [gesture setTranslation:(CGPoint){0, 0} inView:[self superview]];
@@ -284,12 +287,16 @@
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView{
-    CGFloat span = self.endTime - self.startTime;
-    _startTime = (self.scrollView.contentOffset.x - ANCHOR_MARGIN) * [self secondsPerPixel];
-    if (_startTime < 0) {
-        _startTime = 0;
+    CGFloat span = self.startTime - self.timeOffset;
+    
+    self.timeOffset = (self.scrollView.contentOffset.x - ANCHOR_MARGIN) * [self secondsPerPixel];
+    if (self.timeOffset < 0) {
+        self.timeOffset = 0;
     }
-    _endTime = _startTime + span;
+    CGFloat span2 = _endTime - _startTime;
+    _startTime = self.timeOffset + span;
+    _endTime = _startTime + span2;
+    
     [self notifyNewTime];
 }
 

@@ -136,7 +136,7 @@
     
     self.player = [AVPlayer playerWithPlayerItem:self.playItem];
     __weak __typeof(self) weakSelf = self;
-    self.playerTimerObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1,10)
+    self.playerTimerObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMake(1,100)
                                               queue:dispatch_get_main_queue()
                                          usingBlock:^(CMTime time) {
                                              /// 更新播放进度
