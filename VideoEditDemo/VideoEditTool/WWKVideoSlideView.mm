@@ -119,11 +119,12 @@
         NSLog(@"_now = %f, now = %f, now_pos = %f, right = %f, start = %f, end = %f", _now, now, [self timeToPos:self.now], self.anchorRight, self.startTime, self.endTime);
     }
     _now = now;
-    [self moveCurTimeLine];
+    [self moveProgressIndicator];
 }
 
--(void)moveCurTimeLine {
-    self.progressIndicator.frame = CGRectMake([self timeToPos:self.now] - 1, 0, 2, self.bounds.size.height);
+-(void)moveProgressIndicator {
+    //将进度条位置限制在anchorLeft和anchorRight之间
+    self.progressIndicator.frame = CGRectMake(MIN(self.anchorRight, MAX(self.anchorLeft, [self timeToPos:self.now] - 1)), 0, 2, self.bounds.size.height);
 }
 
 -(void)mapValue {
@@ -196,7 +197,7 @@
     self.rightBorderView.frame = CGRectMake(self.anchorRight - self.anchorWidth / 2, 0, self.anchorWidth, self.bounds.size.height);
     self.leftMaskView.frame = CGRectMake(0, 0, CGRectGetMinX(self.leftBorderView.frame), self.bounds.size.height);
     self.rightMaskView.frame = CGRectMake(CGRectGetMaxX(self.rightBorderView.frame), 0, self.bounds.size.width - CGRectGetMaxX(self.rightBorderView.frame), self.bounds.size.height);
-    [self moveCurTimeLine];
+    [self moveProgressIndicator];
 }
 
 //todo : can gesture
