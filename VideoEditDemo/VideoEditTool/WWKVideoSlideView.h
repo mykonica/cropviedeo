@@ -30,6 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, weak) id<WWKVideoSlideViewDelegate> delegate;
 -(void)clearFrames;
 -(void)addFrame:(UIImage*)frameImage;
+-(void)showProgressIndicator:(BOOL)show; //显示或隐藏进度条
 @end
 
 NS_ASSUME_NONNULL_END

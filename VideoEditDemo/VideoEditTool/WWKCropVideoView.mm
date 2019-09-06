@@ -139,9 +139,8 @@
                 NSLog(@"KVO：未知状态，此时不能播放");
                 break;
             case AVPlayerItemStatusReadyToPlay:
-                if (!_player.timeControlStatus || _player.timeControlStatus != AVPlayerTimeControlStatusPaused) {
-                    [_player play];
-                }
+                [_player play];
+                [self.slider showProgressIndicator:YES];
                 NSLog(@"KVO：准备完毕，可以播放");
                 break;
             case AVPlayerItemStatusFailed:
@@ -162,6 +161,7 @@
 
 - (void)pause{
     [self.player pause];
+    [self.slider showProgressIndicator:NO];
 }
 
 -(void)seekToTimeAccurate:(CGFloat)seconds {

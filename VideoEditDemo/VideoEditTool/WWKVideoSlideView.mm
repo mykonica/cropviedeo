@@ -20,9 +20,10 @@
 @property(nonatomic, strong) NSMutableArray<UIImageView*>* frameImageViews;
 @property(nonatomic, strong) UIView *leftMaskView;
 @property(nonatomic, strong) UIView *rightMaskView;
-@property(nonatomic, strong) UIView *curTimeView; //当前位置
+@property(nonatomic, strong) UIView *progressIndicator; //当前位置
 @property(nonatomic, assign) CGFloat anchorWidth;
 @property(nonatomic, assign) CGFloat timeOffset;
+@property(nonatomic, strong) UIView *maxDurationView;
 @end
 
 #define ANCHOR_MARGIN 50 //编辑框边距
@@ -45,11 +46,21 @@
 -(void)initUI {
     self.scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
     self.scrollView.delegate = self;
+    self.scrollView.showsHorizontalScrollIndicator = NO;
+    self.scrollView.showsVerticalScrollIndicator = NO;
     [self addSubview:self.scrollView];
     
-    self.curTimeView = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
-    self.curTimeView.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
-    [self addSubview:self.curTimeView];
+    self.maxDurationView = [[UIView alloc] init];
+    self.maxDurationView.backgroundColor = [UIColor clearColor];
+    self.maxDurationView.userInteractionEnabled = NO;
+    self.maxDurationView.layer.borderWidth = 2;
+    self.maxDurationView.layer.borderColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.6].CGColor;
+    self.maxDurationView.hidden = YES;
+    [self addSubview:self.maxDurationView];
+    
+    self.progressIndicator = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
+    self.progressIndicator.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
+    [self addSubview:self.progressIndicator];
     
     self.topBorderView = [[UIView alloc] initWithFrame:CGRectZero];
     self.topBorderView.backgroundColor = [UIColor whiteColor];
@@ -88,6 +99,10 @@
     [self.rightBorderView addGestureRecognizer:self.rightPanGestureRecognizer];
 }
 
+- (void)showProgressIndicator:(BOOL)show {
+    self.progressIndicator.hidden = !show;
+}
+
 - (void)setDuration:(CGFloat)duration {
     _duration = duration;
     [self mapValue];
@@ -108,7 +123,7 @@
 }
 
 -(void)moveCurTimeLine {
-    self.curTimeView.frame = CGRectMake([self timeToPos:self.now] - 1, 0, 2, self.bounds.size.height);
+    self.progressIndicator.frame = CGRectMake([self timeToPos:self.now] - 1, 0, 2, self.bounds.size.height);
 }
 
 -(void)mapValue {
@@ -174,6 +189,7 @@
 
 - (void)layoutSubviews {
     self.scrollView.frame = self.bounds;
+    self.maxDurationView.frame = CGRectMake(ANCHOR_MARGIN, 0, self.frame.size.width - ANCHOR_MARGIN - ANCHOR_MARGIN, self.frame.size.height);
     self.topBorderView.frame = CGRectMake(self.anchorLeft, 0, self.anchorRight - self.anchorLeft, 2);
     self.bottomBorderView.frame = CGRectMake(self.anchorLeft, self.bounds.size.height - 2, self.anchorRight - self.anchorLeft, 2);
     self.leftBorderView.frame = CGRectMake(self.anchorLeft - self.anchorWidth / 2, 0, self.anchorWidth, self.bounds.size.height);
@@ -187,6 +203,7 @@
 - (void)moveLeftAnchor:(UIPanGestureRecognizer *)gesture{
     switch (gesture.state) {
         case UIGestureRecognizerStateBegan:{
+            self.maxDurationView.hidden = NO;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStart:)]) {
                 [self.delegate slideAnchorStart:self];
             }
@@ -216,6 +233,7 @@
             break;
             
         case UIGestureRecognizerStateEnded:{
+            self.maxDurationView.hidden = YES;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStop:)]) {
                 [self.delegate slideAnchorStop:self];
             }
@@ -230,6 +248,7 @@
 - (void)moveRightAnchor:(UIPanGestureRecognizer *)gesture{
     switch (gesture.state) {
         case UIGestureRecognizerStateBegan:{
+            self.maxDurationView.hidden = NO;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStart:)]) {
                 [self.delegate slideAnchorStart:self];
             }
@@ -246,9 +265,9 @@
             if (time < _startTime + self.minDuration) {
                 _endTime = _startTime + self.minDuration;
                 _anchorRight = _anchorLeft + [self durationToLength:self.minDuration];
-            } else if (time > _startTime + _maxDuration) {
-                _endTime = _startTime + _maxDuration;
-                _anchorRight = _anchorLeft + [self durationToLength:_maxDuration];
+            } else if (time > _timeOffset + _maxDuration) {
+                _endTime = _timeOffset + _maxDuration;
+                _anchorRight = [self timeToPos:_endTime];
             } else {
                 _endTime = time;
                 _anchorRight = anchorRight;
@@ -260,6 +279,7 @@
             break;
             
         case UIGestureRecognizerStateEnded:{
+            self.maxDurationView.hidden = YES;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStop:)]) {
                 [self.delegate slideAnchorStop:self];
             }
