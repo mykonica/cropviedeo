@@ -210,7 +210,7 @@
     
     // 创建AVAssetImageGenerator对象
     AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc]initWithAsset:videoAsset];
-    generator.maximumSize = self.slider.frame.size;
+    generator.maximumSize = CGSizeMake(self.slider.frame.size.width * [UIScreen mainScreen].scale, self.slider.frame.size.height * [UIScreen mainScreen].scale);
     generator.appliesPreferredTrackTransform = YES;
     generator.requestedTimeToleranceBefore = kCMTimeZero;
     generator.requestedTimeToleranceAfter = kCMTimeZero;
