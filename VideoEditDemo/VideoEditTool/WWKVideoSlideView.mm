@@ -177,7 +177,7 @@
 }
 
 -(void)addFrame:(UIImage*)frameImage {
-    CGFloat imgWidth = ([UIScreen mainScreen].bounds.size.width - 2 * self.anchorWidth) / (self.maxDuration + 1);;
+    CGFloat imgWidth = (self.frame.size.width - 2 * self.anchorWidth) / (self.maxDuration + 1);;
     CGFloat imgHeight = self.frame.size.height;
     UIImageView *imgView = [[UIImageView alloc] initWithImage:frameImage];
     imgView.frame = CGRectMake(ANCHOR_MARGIN + self.frameImageViews.count * imgWidth, 0, imgWidth, imgHeight);
@@ -319,15 +319,17 @@
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView{
     CGFloat span = self.startTime - self.timeOffset;
-    
-    self.timeOffset = (self.scrollView.contentOffset.x - ANCHOR_MARGIN) * [self secondsPerPixel];
+    CGFloat maxTimeOffset = self.duration - self.maxDuration;
+    CGFloat maxOffset = self.scrollView.contentSize.width - self.scrollView.frame.size.width;
+    self.timeOffset = self.scrollView.contentOffset.x / maxOffset * maxTimeOffset;
     if (self.timeOffset < 0) {
         self.timeOffset = 0;
+    } else if (self.timeOffset > maxTimeOffset) {
+        self.timeOffset = maxTimeOffset;
     }
     CGFloat span2 = _endTime - _startTime;
     _startTime = self.timeOffset + span;
     _endTime = _startTime + span2;
-    
     [self notifyNewTime];
 }
 
