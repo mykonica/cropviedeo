@@ -139,8 +139,9 @@
                 NSLog(@"KVO：未知状态，此时不能播放");
                 break;
             case AVPlayerItemStatusReadyToPlay:
-                [_player play];
-                [self.slider showProgressIndicator:YES];
+                if (!_player.timeControlStatus || _player.timeControlStatus != AVPlayerTimeControlStatusPaused) {
+                    [_player play];
+                }
                 NSLog(@"KVO：准备完毕，可以播放");
                 break;
             case AVPlayerItemStatusFailed:
@@ -161,7 +162,6 @@
 
 - (void)pause{
     [self.player pause];
-    [self.slider showProgressIndicator:NO];
 }
 
 -(void)seekToTimeAccurate:(CGFloat)seconds {
@@ -202,66 +202,14 @@
     [self seekToTimeAccurate:self.slider.startTime];
 }
 
-- (void)analysisVideoFrames:(void (^ __nullable)(BOOL finished))completion{
-    // 初始化asset对象
-    AVURLAsset *videoAsset = [[AVURLAsset alloc]initWithURL:self.videoUrl options:nil];
-    // 获取总视频的长度 = 总帧数 / 每秒的帧数
-    long videoSumTime = videoAsset.duration.value / videoAsset.duration.timescale;
-    
-    // 创建AVAssetImageGenerator对象
-    AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc]initWithAsset:videoAsset];
-    generator.maximumSize = CGSizeMake(self.slider.frame.size.width * [UIScreen mainScreen].scale, self.slider.frame.size.height * [UIScreen mainScreen].scale);
-    generator.appliesPreferredTrackTransform = YES;
-    generator.requestedTimeToleranceBefore = kCMTimeZero;
-    generator.requestedTimeToleranceAfter = kCMTimeZero;
-    
-    self.slider.duration = videoSumTime;
-    self.slider.maxDuration = MIN(5, videoSumTime);
-    
-    // 添加需要帧数的时间集合
-    NSMutableArray *framesArray = [NSMutableArray array];
-    for (int i = 0; i < videoSumTime; i++) {
-        CMTime time = CMTimeMake(i *videoAsset.duration.timescale , videoAsset.duration.timescale);
-        NSValue *value = [NSValue valueWithCMTime:time];
-        [framesArray addObject:value];
-    }
-    
-    NSMutableArray<UIImage*> *frameImgs = [[NSMutableArray alloc] init];
-    
-    __weak __typeof(self) weakSelf = self;
-    [generator generateCGImagesAsynchronouslyForTimes:framesArray completionHandler:^(CMTime requestedTime, CGImageRef img, CMTime actualTime, AVAssetImageGeneratorResult result, NSError *error){
-        if (result == AVAssetImageGeneratorSucceeded) {
-            //todo : 注意帧是否按顺序返回
-            UIImage *image = [UIImage imageWithCGImage:img];
-            [frameImgs addObject:image];
-            if (frameImgs.count >= framesArray.count) {
-                [weakSelf.slider clearFrames];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    for (UIImage *tmpImg : frameImgs) {
-                        [weakSelf.slider addFrame:tmpImg];
-                    }
-                    [weakSelf initPlayerWithVideoUrl:weakSelf.videoUrl];
-                    if (completion) {
-                        completion(YES);
-                    }
-                });
-            }
-        } else {
-            completion(NO);
-        }
-        
-        if (result == AVAssetImageGeneratorFailed) {
-            NSLog(@"Failed with error: %@", [error localizedDescription]);
-        }
-        
-        if (result == AVAssetImageGeneratorCancelled) {
-            NSLog(@"AVAssetImageGeneratorCancelled");
-        }
-    }];
-}
-
 -(void)prepareEdit:(void (^ __nullable)(BOOL finished))completion {
-    [self analysisVideoFrames:completion];
+    self.slider.videoUrl = self.videoUrl;
+    self.slider.maxDuration = 15;
+    [self initPlayerWithVideoUrl:self.videoUrl];
+    if(completion) {
+        completion(YES);
+    }
+//    [self analysisVideoFrames:completion];
 }
 
 - (void)onCancel{

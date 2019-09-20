@@ -28,9 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) CGFloat minDuration; //裁剪后的最短时长，默认1秒
 @property(nonatomic, assign) CGFloat maxDuration; //裁剪后的最长时长，默认15秒
 @property(nonatomic, weak) id<WWKVideoSlideViewDelegate> delegate;
--(void)clearFrames;
--(void)addFrame:(UIImage*)frameImage;
--(void)showProgressIndicator:(BOOL)show; //显示或隐藏进度条
+@property(nonatomic, strong) NSURL *videoUrl;
 @end
 
 NS_ASSUME_NONNULL_END

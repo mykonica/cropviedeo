@@ -6,9 +6,28 @@
 //
 
 #import "WWKVideoSlideView.h"
+#import <AVFoundation/AVFoundation.h>
+@interface WWKVideoFrameCell : UICollectionViewCell
+@property(nonatomic, strong) UIImageView* imageView;
+@end
 
-@interface WWKVideoSlideView () <UIScrollViewDelegate>
-@property(nonatomic, strong) UIScrollView *scrollView;
+@implementation WWKVideoFrameCell
+-(id)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _imageView = [[UIImageView alloc] initWithFrame:self.bounds];
+        [self addSubview:_imageView];
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    self.imageView.frame = self.bounds;
+}
+@end
+
+@interface WWKVideoSlideView () <UICollectionViewDataSource, UICollectionViewDelegate>
+@property(nonatomic, strong) UICollectionView *collectionView;
 @property(nonatomic, strong) UIView *topBorderView;
 @property(nonatomic, strong) UIView *bottomBorderView;
 @property(nonatomic, strong) UIButton *leftBorderView;
@@ -17,13 +36,13 @@
 @property(nonatomic, strong) UIPanGestureRecognizer *rightPanGestureRecognizer;
 @property(nonatomic, assign) CGFloat anchorLeft;  // 编辑框开始点，左anchor的center
 @property(nonatomic, assign) CGFloat anchorRight; //编辑框结束点，右anchor的center
-@property(nonatomic, strong) NSMutableArray<UIImageView*>* frameImageViews;
 @property(nonatomic, strong) UIView *leftMaskView;
 @property(nonatomic, strong) UIView *rightMaskView;
-@property(nonatomic, strong) UIView *progressIndicator; //当前位置
+@property(nonatomic, strong) UIView *curTimeView; //当前位置
 @property(nonatomic, assign) CGFloat anchorWidth;
 @property(nonatomic, assign) CGFloat timeOffset;
-@property(nonatomic, strong) UIView *maxDurationView;
+@property(nonatomic, strong) AVAssetImageGenerator *frameGenerator;
+@property(nonatomic, strong) NSMutableDictionary<NSNumber*, UIImage*> *frameImages;
 @end
 
 #define ANCHOR_MARGIN 50 //编辑框边距
@@ -44,23 +63,20 @@
 }
 
 -(void)initUI {
-    self.scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
-    self.scrollView.delegate = self;
-    self.scrollView.showsHorizontalScrollIndicator = NO;
-    self.scrollView.showsVerticalScrollIndicator = NO;
-    [self addSubview:self.scrollView];
+    UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
+    layout.sectionInset = UIEdgeInsetsMake(0, ANCHOR_MARGIN, 0, ANCHOR_MARGIN);
+    layout.minimumInteritemSpacing = 0;
+    layout.minimumLineSpacing = 0;
+    [layout setScrollDirection:UICollectionViewScrollDirectionHorizontal];
+    self.collectionView = [[UICollectionView alloc] initWithFrame:self.bounds collectionViewLayout:layout];
+    self.collectionView.delegate = self;
+    self.collectionView.dataSource = self;
+    [self.collectionView registerClass:WWKVideoFrameCell.class forCellWithReuseIdentifier:NSStringFromClass(WWKVideoFrameCell.class)];
+    [self addSubview:self.collectionView];
     
-    self.maxDurationView = [[UIView alloc] init];
-    self.maxDurationView.backgroundColor = [UIColor clearColor];
-    self.maxDurationView.userInteractionEnabled = NO;
-    self.maxDurationView.layer.borderWidth = 2;
-    self.maxDurationView.layer.borderColor = [UIColor colorWithRed:1 green:1 blue:1 alpha:0.6].CGColor;
-    self.maxDurationView.hidden = YES;
-    [self addSubview:self.maxDurationView];
-    
-    self.progressIndicator = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
-    self.progressIndicator.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
-    [self addSubview:self.progressIndicator];
+    self.curTimeView = [[UIView alloc] initWithFrame:CGRectMake(10, 0, 3, 50)];
+    self.curTimeView.backgroundColor = [UIColor colorWithRed:214/255.0 green:230/255.0 blue:247/255.0 alpha:1.0];
+    [self addSubview:self.curTimeView];
     
     self.topBorderView = [[UIView alloc] initWithFrame:CGRectZero];
     self.topBorderView.backgroundColor = [UIColor whiteColor];
@@ -99,10 +115,6 @@
     [self.rightBorderView addGestureRecognizer:self.rightPanGestureRecognizer];
 }
 
-- (void)showProgressIndicator:(BOOL)show {
-    self.progressIndicator.hidden = !show;
-}
-
 - (void)setDuration:(CGFloat)duration {
     _duration = duration;
     [self mapValue];
@@ -114,17 +126,74 @@
     [self mapValue];
 }
 
+- (void)setVideoUrl:(NSURL *)videoUrl {
+    _videoUrl = videoUrl;
+    
+    AVURLAsset *videoAsset = [[AVURLAsset alloc]initWithURL:_videoUrl options:nil];
+    self.duration = CMTimeGetSeconds(videoAsset.duration);
+    self.maxDuration = MIN(self.maxDuration, self.duration);
+    self.frameGenerator = [[AVAssetImageGenerator alloc]initWithAsset:videoAsset];
+    self.frameGenerator.maximumSize = CGSizeMake(self.frame.size.width * [UIScreen mainScreen].scale, self.frame.size.height * [UIScreen mainScreen].scale);
+    self.frameGenerator.appliesPreferredTrackTransform = YES;
+    self.frameGenerator.requestedTimeToleranceBefore = kCMTimeZero;
+    self.frameGenerator.requestedTimeToleranceAfter = kCMTimeZero;
+    
+    self.frameImages = [[NSMutableDictionary alloc] init];
+    [self.collectionView reloadData];
+}
+
+-(CGSize)frameSize {
+    CGFloat imgWidth = (self.frame.size.width - 2 * self.anchorWidth) / (self.maxDuration + 1);;
+    CGFloat imgHeight = self.frame.size.height;
+    return CGSizeMake(imgWidth, imgHeight);
+}
+
+- (void)getFrameAtSeconds:(NSInteger)seconds completion:(void (^ __nullable)(BOOL success, UIImage* frame))completion {
+    NSNumber *frameKey = @(seconds);
+    UIImage *frame = [self.frameImages objectForKey:frameKey];
+    if (frame) {
+        if (completion) {
+            completion(YES, frame);
+        }
+    } else {
+        
+        __weak __typeof(self) weakSelf = self;
+                CMTime time = CMTimeMake(seconds, 1);
+            [self.frameGenerator generateCGImagesAsynchronouslyForTimes:@[[NSValue valueWithCMTime:time]] completionHandler:^(CMTime requestedTime, CGImageRef img, CMTime actualTime, AVAssetImageGeneratorResult result, NSError *error){
+                if (result == AVAssetImageGeneratorSucceeded) {
+                    UIImage *image = [UIImage imageWithCGImage:img];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [weakSelf.frameImages setObject:image forKey:frameKey];
+                        if (completion) {
+                            completion(YES, image);
+                        }
+                    });
+                } else {
+                    if (result == AVAssetImageGeneratorFailed) {
+                        NSLog(@"Failed with error: %@", [error localizedDescription]);
+                    } else if (result == AVAssetImageGeneratorCancelled) {
+                        NSLog(@"AVAssetImageGeneratorCancelled");
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (completion) {
+                            completion(NO, nil);
+                        }
+                    });
+                }
+            }];
+    }
+}
+
 -(void)setNow:(CGFloat)now {
     if (_now > now) {
         NSLog(@"_now = %f, now = %f, now_pos = %f, right = %f, start = %f, end = %f", _now, now, [self timeToPos:self.now], self.anchorRight, self.startTime, self.endTime);
     }
     _now = now;
-    [self moveProgressIndicator];
+    [self moveCurTimeLine];
 }
 
--(void)moveProgressIndicator {
-    //将进度条位置限制在anchorLeft和anchorRight之间
-    self.progressIndicator.frame = CGRectMake(MIN(self.anchorRight, MAX(self.anchorLeft, [self timeToPos:self.now] - 1)), 0, 2, self.bounds.size.height);
+-(void)moveCurTimeLine {
+    self.curTimeView.frame = CGRectMake([self timeToPos:self.now] - 1, 0, 2, self.bounds.size.height);
 }
 
 -(void)mapValue {
@@ -140,16 +209,9 @@
     _anchorRight = [self timeToPos:_endTime];
 }
 
--(void)clearFrames {
-    for (UIImageView *imgView in self.frameImageViews) {
-        [imgView removeFromSuperview];
-    }
-    
-    self.frameImageViews = [[NSMutableArray alloc] init];
-}
 
 -(CGFloat)durationPixels {
-    return MAX(0, self.scrollView.contentSize.width - ANCHOR_MARGIN - ANCHOR_MARGIN);
+    return MAX(0, self.collectionView.contentSize.width - ANCHOR_MARGIN - ANCHOR_MARGIN);
 }
 
 -(CGFloat)secondsPerPixel {
@@ -176,35 +238,21 @@
     return ANCHOR_MARGIN + (time - _timeOffset) * [self pixelsPerSeconds];
 }
 
--(void)addFrame:(UIImage*)frameImage {
-    CGFloat imgWidth = (self.frame.size.width - 2 * self.anchorWidth) / (self.maxDuration + 1);;
-    CGFloat imgHeight = self.frame.size.height;
-    UIImageView *imgView = [[UIImageView alloc] initWithImage:frameImage];
-    imgView.frame = CGRectMake(ANCHOR_MARGIN + self.frameImageViews.count * imgWidth, 0, imgWidth, imgHeight);
-    [self.frameImageViews addObject:imgView];
-    [self.scrollView addSubview:imgView];
-    CGFloat contentWidth = MAX(ANCHOR_MARGIN + self.scrollView.frame.size.width, ANCHOR_MARGIN + self.frameImageViews.count * imgWidth + ANCHOR_MARGIN);
-    self.scrollView.contentSize = CGSizeMake(contentWidth, imgHeight);
-}
-
-
 - (void)layoutSubviews {
-    self.scrollView.frame = self.bounds;
-    self.maxDurationView.frame = CGRectMake(ANCHOR_MARGIN, 0, self.frame.size.width - ANCHOR_MARGIN - ANCHOR_MARGIN, self.frame.size.height);
+    self.collectionView.frame = self.bounds;
     self.topBorderView.frame = CGRectMake(self.anchorLeft, 0, self.anchorRight - self.anchorLeft, 2);
     self.bottomBorderView.frame = CGRectMake(self.anchorLeft, self.bounds.size.height - 2, self.anchorRight - self.anchorLeft, 2);
     self.leftBorderView.frame = CGRectMake(self.anchorLeft - self.anchorWidth / 2, 0, self.anchorWidth, self.bounds.size.height);
     self.rightBorderView.frame = CGRectMake(self.anchorRight - self.anchorWidth / 2, 0, self.anchorWidth, self.bounds.size.height);
     self.leftMaskView.frame = CGRectMake(0, 0, CGRectGetMinX(self.leftBorderView.frame), self.bounds.size.height);
     self.rightMaskView.frame = CGRectMake(CGRectGetMaxX(self.rightBorderView.frame), 0, self.bounds.size.width - CGRectGetMaxX(self.rightBorderView.frame), self.bounds.size.height);
-    [self moveProgressIndicator];
+    [self moveCurTimeLine];
 }
 
 //todo : can gesture
 - (void)moveLeftAnchor:(UIPanGestureRecognizer *)gesture{
     switch (gesture.state) {
         case UIGestureRecognizerStateBegan:{
-            self.maxDurationView.hidden = NO;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStart:)]) {
                 [self.delegate slideAnchorStart:self];
             }
@@ -234,7 +282,6 @@
             break;
             
         case UIGestureRecognizerStateEnded:{
-            self.maxDurationView.hidden = YES;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStop:)]) {
                 [self.delegate slideAnchorStop:self];
             }
@@ -249,7 +296,6 @@
 - (void)moveRightAnchor:(UIPanGestureRecognizer *)gesture{
     switch (gesture.state) {
         case UIGestureRecognizerStateBegan:{
-            self.maxDurationView.hidden = NO;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStart:)]) {
                 [self.delegate slideAnchorStart:self];
             }
@@ -266,9 +312,9 @@
             if (time < _startTime + self.minDuration) {
                 _endTime = _startTime + self.minDuration;
                 _anchorRight = _anchorLeft + [self durationToLength:self.minDuration];
-            } else if (time > _timeOffset + _maxDuration) {
-                _endTime = _timeOffset + _maxDuration;
-                _anchorRight = [self timeToPos:_endTime];
+            } else if (time > _startTime + _maxDuration) {
+                _endTime = _startTime + _maxDuration;
+                _anchorRight = _anchorLeft + [self durationToLength:_maxDuration];
             } else {
                 _endTime = time;
                 _anchorRight = anchorRight;
@@ -280,7 +326,6 @@
             break;
             
         case UIGestureRecognizerStateEnded:{
-            self.maxDurationView.hidden = YES;
             if (self.delegate && [self.delegate respondsToSelector:@selector(slideAnchorStop:)]) {
                 [self.delegate slideAnchorStop:self];
             }
@@ -298,6 +343,7 @@
     }
 }
 
+#pragma mark - UIScrollViewDelegate
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView{
     if (self.delegate && [self.delegate respondsToSelector:@selector(slideStart:)]) {
         [self.delegate slideStart:self];
@@ -320,8 +366,8 @@
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView{
     CGFloat span = self.startTime - self.timeOffset;
     CGFloat maxTimeOffset = self.duration - self.maxDuration;
-    CGFloat maxOffset = self.scrollView.contentSize.width - self.scrollView.frame.size.width;
-    self.timeOffset = self.scrollView.contentOffset.x / maxOffset * maxTimeOffset;
+    CGFloat maxOffset = self.collectionView.contentSize.width - self.collectionView.frame.size.width;
+    self.timeOffset = self.collectionView.contentOffset.x / maxOffset * maxTimeOffset;
     if (self.timeOffset < 0) {
         self.timeOffset = 0;
     } else if (self.timeOffset > maxTimeOffset) {
@@ -333,4 +379,24 @@
     [self notifyNewTime];
 }
 
+#pragma mark - UICollectionViewDataSource
+- (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView {
+    return 1;
+}
+
+- (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
+    return self.duration;
+}
+
+- (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
+    WWKVideoFrameCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:NSStringFromClass(WWKVideoFrameCell.class) forIndexPath:indexPath];
+    [self getFrameAtSeconds:indexPath.row completion:^(BOOL success, UIImage *frame) {
+        cell.imageView.image = frame;
+    }];
+    return cell;
+}
+
+- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
+    return [self frameSize];
+}
 @end
